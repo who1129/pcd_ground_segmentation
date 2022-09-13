@@ -1,0 +1,4 @@
+path:
+  data_root: "/Users/milla/Documents/dataset"
+  label_root: "/Users/milla/Documents/dataset/labels"
+  pcd_root: "/Users/milla/Documents/dataset/pointclouds"
