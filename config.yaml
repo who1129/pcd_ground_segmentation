@@ -2,3 +2,13 @@ path:
   data_root: "/Users/milla/Documents/dataset"
   label_root: "/Users/milla/Documents/dataset/labels"
   pcd_root: "/Users/milla/Documents/dataset/pointclouds"
+
+encoder:
+  H: 3 # z normalization constant
+  R_unit: 0.5 # divided bins(unit=m)
+  C: 90 # divided cones (unit=pcs)
+
+pointcloud:
+  target_range: [30, -3, 5] # [radius z_min z_max]
+  
+  

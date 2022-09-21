@@ -7,6 +7,7 @@ from .dataset import DatasetTemplate
 
 class SemanticKITTI(DatasetTemplate):
     def __init__(self, cfg, logger, split="train"):
+        self.cfg = cfg
         self.label_root = cfg.path.label_root
         self.pcd_root = cfg.path.pcd_root
         self.logger = logger
@@ -79,9 +80,9 @@ class SemanticKITTI(DatasetTemplate):
             .replace("labels", "velodyne")
         )
         pcd = self._load_pcd(pcd_path)
-        input_dict = {"label": label, "pcd": pcd}
-        # data_dict = self.prepare_data(data_dict=input_dict)
-        return input_dict
+        data_dict = {"label": label, "pcd": pcd}
+        data_dict = self.prepare_data(data_dict)
+        return data_dict
 
     def __len__(self):
         return len(self.label_paths)
