@@ -18,14 +18,10 @@ class SemanticKITTI(DatasetTemplate):
     def _load_path(self):
         self.logger.info("Loading SemanticKITTI Dataset")
 
-        self.label_paths = glob.glob(
-            os.path.join(self.label_root, "**/*.label"), recursive=True
-        )
+        self.label_paths = glob.glob(os.path.join(self.label_root, "**/*.label"), recursive=True)
         pcd_paths = glob.glob(os.path.join(self.pcd_root, "**/*.bin"), recursive=True)
 
-        self.logger.info(
-            f"# of label file: {len(self.label_paths)}\n # of pcd file: {len(pcd_paths)}"
-        )
+        self.logger.info(f"# of label file: {len(self.label_paths)}\n # of pcd file: {len(pcd_paths)}")
         if len(self.label_paths) != len(pcd_paths):
             for l_path in self.label_paths:
                 p_path = (
@@ -33,25 +29,32 @@ class SemanticKITTI(DatasetTemplate):
                     .replace(".label", ".bin")
                     .replace("labels", "velodyne")
                 )
-                assert os.path.isfile(p_path), (
-                    "This pcd file does not exist! >> " + p_path
-                )
+                assert os.path.isfile(p_path), "This pcd file does not exist! >> " + p_path
 
             self.logger.warning("label file and pcd file list do not match.")
 
-    def _load_label(self, path):
+    def _load_label(self, path, del_idx):
         label = np.fromfile(path, dtype=np.int32)
         label = label.reshape((-1))  # reshape to vector
         label = label & 0xFFFF  # get lower half for semantics
         label = self.label_cfg["remap_lut"][label]  # remap to xentropy format
 
-        return label
+        return np.delete(label, del_idx, axis=0)
 
     def _load_pcd(self, path):
         pcd = np.fromfile(path, dtype=np.float32)
         pcd = pcd.reshape((-1, 4))
+        del_idx = np.where(pcd[:, :3] == [0.0, 0.0, 0.0])[0]
+        return np.delete(pcd, del_idx, axis=0), del_idx
 
-        return pcd
+    def load_batch(self, label_path):
+        pcd_path = (
+            label_path.replace(self.label_root, self.pcd_root).replace(".label", ".bin").replace("labels", "velodyne")
+        )
+        pcd, del_idx = self._load_pcd(pcd_path)
+        label = self._load_label(label_path, del_idx)
+
+        return label, pcd
 
     def _load_dataset_cfg(self, path):
         # config setting
@@ -72,17 +75,16 @@ class SemanticKITTI(DatasetTemplate):
         return DATA
 
     def __getitem__(self, index):
-        label_path = self.label_paths[index]
-        label = self._load_label(label_path)
-        pcd_path = (
-            label_path.replace(self.label_root, self.pcd_root)
-            .replace(".label", ".bin")
-            .replace("labels", "velodyne")
-        )
-        pcd = self._load_pcd(pcd_path)
-        data_dict = {"label": label, "pcd": pcd}
-        data_dict = self.prepare_data(data_dict)
-        return data_dict
+        try:
+            label_path = self.label_paths[index]
+            label, pcd = self.load_batch(label_path)
+            data_dict = {"label": label, "pcd": pcd}
+            data_dict = self.prepare_data(data_dict)
+            return data_dict
+        except:
+            print(self.label_paths[index])
+            print(pcd.shape)
+            print(label.shape)
 
     def __len__(self):
         return len(self.label_paths)

@@ -46,13 +46,15 @@ class DatasetTemplate(torch_data.Dataset):
         input_matrix = []
         for i in bin_idx.flatten():
             mask = grid_mask == i
-            bin_pts = pcd[mask]
-
-            depth = np.linalg.norm(bin_pts[:, :2], axis=1)
-            depth = np.mean(depth)
-            depth = np.log(depth)
-            height = np.mean(bin_pts[:, 2]) / 3
-            intensity = np.mean(bin_pts[:, 3])
+            if np.sum(mask) != 0:
+                bin_pts = pcd[mask]
+                depth = np.linalg.norm(bin_pts[:, :2], axis=1)
+                depth = np.mean(depth)
+                depth = np.log(depth)
+                height = np.mean(bin_pts[:, 2]) / 3
+                intensity = np.mean(bin_pts[:, 3])
+            else:
+                depth, height, intensity = [0.0, 0.0, 0.0]
 
             feature = [depth, height, intensity]
             input_matrix.append(feature)
@@ -64,13 +66,10 @@ class DatasetTemplate(torch_data.Dataset):
                 label_matrix_ground[i] = -1
             else:
                 label_matrix_non_ground[i] = (cnt_pts - np.sum(masked_label)) / cnt_pts
-
                 label_matrix_ground[i] = np.sum(masked_label) / cnt_pts
         input_matrix = np.array(input_matrix).reshape(R, C, 3)
-        label_matrix = np.array([label_matrix_non_ground, label_matrix_ground]).reshape(
-            2, R, C
-        )
-        label_matrix = np.einsum("ijk->jki", label_matrix)
+        label_matrix = np.array([label_matrix_non_ground, label_matrix_ground]).reshape(2, R, C)
+        input_matrix = np.einsum("ijk->kij", input_matrix)
 
         # interpolate empty bins
         for i in range(3):
@@ -85,21 +84,10 @@ class DatasetTemplate(torch_data.Dataset):
             y1 = yy[~array.mask]
             newarr = array[~array.mask]
 
-            interpolated_channel = interpolate.griddata(
-                (x1, y1), newarr.ravel(), (xx, yy), method="nearest"
-            )
+            interpolated_channel = interpolate.griddata((x1, y1), newarr.ravel(), (xx, yy), method="nearest")
             input_matrix[:, :, i] = interpolated_channel
 
         return input_matrix, label_matrix, grid_mask, bin_idx
-
-    def decoding_pointcloud(self, output_matrix, grid_mask, pcd, bin_idx):
-        decoded_output = np.zeros((pcd.shape[0]), dtype=int)
-        non_ground = output_matrix[:, :, 0].flatten()
-        ground = output_matrix[:, :, 1].flatten()
-        pred = ground > non_ground
-
-        decoded_output = pred[grid_mask]
-        return decoded_output
 
     def normalize_range(self, label, pcd, param):
         radius, z_min, z_max = param.target_range
@@ -123,9 +111,7 @@ class DatasetTemplate(torch_data.Dataset):
 
         label, pcd = self.normalize_range(label, pcd, self.cfg.pointcloud)
         # to-do:augmentation
-        input_matrix, label_matrix, grid_mask, bin_idx = self.encoding_pointcloud(
-            label, pcd, self.cfg
-        )
+        input_matrix, label_matrix, grid_mask, bin_idx = self.encoding_pointcloud(label, pcd, self.cfg)
         input_dict["pcd"] = pcd
         input_dict["label"] = label
         input_dict["input_matrix"] = input_matrix
@@ -134,3 +120,14 @@ class DatasetTemplate(torch_data.Dataset):
         input_dict["bin_idx"] = bin_idx
 
         return input_dict
+
+
+def decoding_pointcloud(output_matrix, grid_mask):
+    decoded_output = np.zeros((grid_mask.shape[0]), dtype=int)
+    non_ground = output_matrix[0].flatten()
+    ground = output_matrix[1].flatten()
+    pred = ground > non_ground
+    pred = np.where(pred)
+    decoded_output[np.isin(grid_mask, pred)] = 1
+    return decoded_output
+
