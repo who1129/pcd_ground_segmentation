@@ -8,30 +8,28 @@ from .dataset import DatasetTemplate
 class SemanticKITTI(DatasetTemplate):
     def __init__(self, cfg, logger, split="train"):
         self.cfg = cfg
+        self.split = split
         self.label_root = cfg.path.label_root
         self.pcd_root = cfg.path.pcd_root
         self.logger = logger
-        self.label_paths = None
+        self.label_paths = []
         self.label_cfg = self._load_dataset_cfg("src/data/semantic-kitti.yaml")
         self._load_path()
 
     def _load_path(self):
-        self.logger.info("Loading SemanticKITTI Dataset")
-
-        self.label_paths = glob.glob(os.path.join(self.label_root, "**/*.label"), recursive=True)
-        pcd_paths = glob.glob(os.path.join(self.pcd_root, "**/*.bin"), recursive=True)
-
-        self.logger.info(f"# of label file: {len(self.label_paths)}\n # of pcd file: {len(pcd_paths)}")
-        if len(self.label_paths) != len(pcd_paths):
-            for l_path in self.label_paths:
-                p_path = (
-                    l_path.replace(self.label_root, self.pcd_root)
-                    .replace(".label", ".bin")
-                    .replace("labels", "velodyne")
-                )
-                assert os.path.isfile(p_path), "This pcd file does not exist! >> " + p_path
-
-            self.logger.warning("label file and pcd file list do not match.")
+        self.logger.info(f"Loading SemanticKITTI {self.split} Dataset")
+        seq_list = self.cfg.path.split[self.split]
+        for sequence in seq_list:
+            sequence = "{0:02d}".format(int(sequence))
+            self.label_paths.extend(
+                glob.glob(os.path.join(self.label_root, f"sequences/{sequence}/**/*.label"), recursive=True)
+            )
+        self.logger.info(f"# of label file: {len(self.label_paths)}")
+        for l_path in self.label_paths:
+            p_path = (
+                l_path.replace(self.label_root, self.pcd_root).replace(".label", ".bin").replace("labels", "velodyne")
+            )
+            assert os.path.isfile(p_path), "This pcd file does not exist! >> " + p_path
 
     def _load_label(self, path, del_idx):
         label = np.fromfile(path, dtype=np.int32)
@@ -58,7 +56,13 @@ class SemanticKITTI(DatasetTemplate):
 
     def _load_dataset_cfg(self, path):
         # config setting
-        DATA = yaml.safe_load(open(path, "r", encoding="utf-8",))
+        DATA = yaml.safe_load(
+            open(
+                path,
+                "r",
+                encoding="utf-8",
+            )
+        )
 
         # get number of interest classes, and the label mappings
         class_strings = DATA["labels"]

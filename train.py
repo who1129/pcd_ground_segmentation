@@ -5,11 +5,18 @@ from tqdm import tqdm
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 
+from eval import evalutation
 from src.model.model import GroundNet
 from src.model.loss import SoftmaxWithloss
 from src.data.SemanticKITTI import SemanticKITTI
 from src.data.dataset import decoding_pointcloud
-from src.utils.utils import yaml_load, create_logger, batch_collate, get_loss_function, SummaryWriterAvg
+from src.utils.utils import (
+    yaml_load,
+    create_logger,
+    batch_collate,
+    get_loss_function,
+    SummaryWriterAvg,
+)
 
 
 def init_model(cfg):
@@ -29,9 +36,23 @@ def load_model(path):
     return model
 
 
+def get_pred(output, batch_data):
+    output_ = output.detach().to("cpu").numpy()
+    grid_mask_ = batch_data["grid_mask"].detach().numpy()
+    label_ = batch_data["label"].detach().numpy()
+    point_cnt_ = batch_data["point_cnt"].detach().numpy()
+    label = []
+    pred = []
+    for i in range(label_.shape[0]):
+        pred.append(decoding_pointcloud(output_[i], grid_mask_[i])[: int(point_cnt_[i])])
+        label.append(label_[i][: int(point_cnt_[i])])
+
+    return pred, label
+
+
 def vis_output(output, batch_data, select_idx=0, ground_label=[9, 11, 12, 17]):
     idx = select_idx
-    output_ = output[idx].detach().numpy()
+    output_ = output[idx].detach().to("cpu").numpy()
     grid_mask_ = batch_data["grid_mask"][idx].detach().numpy()
     pcd_ = batch_data["pcd"][idx].detach().numpy()
     label_ = batch_data["label"][idx].detach().numpy()
@@ -53,39 +74,89 @@ def vis_output(output, batch_data, select_idx=0, ground_label=[9, 11, 12, 17]):
     return fig
 
 
-def train(cfg, trainset):
+def train(cfg, trainset, validset):
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
     sw = SummaryWriterAvg(log_dir=cfg.path.exp_path, flush_secs=10, dump_period=2)
-    model = init_model(cfg)
+    model = init_model(cfg).to(device)
     param = cfg.learn
     loss_criterion = SoftmaxWithloss()
     # loss_criterion = get_loss_function(cfg.model.loss)
-    optim = torch.optim.Adam(model.parameters(), lr=0.001)
+    optim = torch.optim.Adam(model.parameters(), lr=0.0005)
     lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optim, milestones=[80, 90], gamma=0.1)
 
-    train_dataloader = DataLoader(trainset, param.batch_size, drop_last=True, num_workers=4, collate_fn=batch_collate)
+    train_dataloader = DataLoader(trainset, param.batch_size, drop_last=True, num_workers=8, collate_fn=batch_collate)
+    valid_dataloader = DataLoader(validset, param.batch_size, drop_last=False, num_workers=8, collate_fn=batch_collate)
 
-    model.train()
     for epoch in tqdm(range(param.total_epoch)):
-
+        sw.add_scalar(
+            tag="learning_rate",
+            value=optim.param_groups[0]["lr"],
+            global_step=epoch,
+        )
         for it, batch_data in enumerate(tqdm(train_dataloader, total=int(len(train_dataloader)))):
             global_step = epoch * len(trainset) + it
+
+            # train
+            model.train()
             with torch.set_grad_enabled(True):
-                output = model(batch_data)
-                loss = loss_criterion(output, batch_data["label_matrix"])
+                optim.zero_grad()
+                input_matrix = batch_data["input_matrix"].to(device)
+                output = model(input_matrix)
+                label_matrix = batch_data["label_matrix"].to(device)
+                loss = loss_criterion(output, label_matrix)
                 loss = torch.mean(loss)
                 sw.add_scalar(
-                    tag="train_loss", value=loss.item(), global_step=global_step,
+                    tag="train_loss",
+                    value=loss.item(),
+                    global_step=global_step,
                 )
-
-                optim.zero_grad()
                 loss.backward()
                 optim.step()
+            if it in [0, 1000]:
+                vis = vis_output(output, batch_data)
+                sw.add_figure(tag=f"train_vis_{it}", figure=vis, global_step=epoch)
 
+        # valid
+        valid_loss = []
+        label_list = []
+        pred_list = []
+        for it, batch_data in enumerate(tqdm(valid_dataloader, total=int(len(valid_dataloader)))):
+            model.eval()
+            with torch.no_grad():
+                input_matrix = batch_data["input_matrix"].to(device)
+                output = model(input_matrix)
+                label_matrix = batch_data["label_matrix"].to(device)
+                loss = loss_criterion(output, label_matrix)
+                valid_loss.append(torch.mean(loss).item())
+                pred, label = get_pred(output, batch_data)
+                label_list.extend(label)
+                pred_list.extend(pred)
+
+            if it in [0, 1000]:
+                vis = vis_output(output, batch_data)
+                sw.add_figure(tag=f"val_vis_{it}", figure=vis, global_step=epoch)
+        m_accuracy, m_jaccard, m_recall = evalutation(pred_list, label_list, validset.label_cfg)
         sw.add_scalar(
-            tag="learning_rate", value=optim.param_groups[0]["lr"], global_step=global_step,
+            tag="valid/m_accuracy",
+            value=m_accuracy,
+            global_step=epoch,
         )
-        vis = vis_output(output, batch_data)
-        sw.add_figure(tag="vis", figure=vis, global_step=epoch)
+        sw.add_scalar(
+            tag="valid/m_iou",
+            value=m_jaccard,
+            global_step=epoch,
+        )
+        sw.add_scalar(
+            tag="valid/m_recall",
+            value=m_recall,
+            global_step=epoch,
+        )
+        sw.add_scalar(
+            tag="valid/loss",
+            value=sum(valid_loss) / len(valid_loss),
+            global_step=epoch,
+        )
 
         if epoch % param.save_interval == 0:
             save_model(model, os.path.join(cfg.path.exp_path, f"ckpts/{epoch}.pth"))
@@ -97,6 +168,7 @@ if __name__ == "__main__":
     cfg = yaml_load("config.yaml")
     logger = create_logger("../..", "tmp.log")
 
-    dataset = SemanticKITTI(cfg, logger)
+    trainset = SemanticKITTI(cfg, logger)
+    validset = SemanticKITTI(cfg, logger, split="valid")
 
-    train(cfg, dataset)
+    train(cfg, trainset, validset)

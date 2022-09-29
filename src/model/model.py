@@ -28,6 +28,6 @@ class GroundNet(nn.Module):
         )
         return net
 
-    def forward(self, batch_dict):
-        output = self.net(batch_dict["input_matrix"])
+    def forward(self, input_matrix):
+        output = self.net(input_matrix)
         return output

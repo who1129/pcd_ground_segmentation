@@ -37,8 +37,7 @@ class DatasetTemplate(torch_data.Dataset):
         label_matrix_ground = []
         ground_label = [9, 11, 12, 17]
         label_ = np.zeros_like(label)
-        for l in ground_label:
-            label_[label == l] = 1
+        label_[np.isin(label, ground_label)] = 1
 
         grid_mask = bin_idx[polar_radius, polar_cone]
         label_matrix_non_ground = np.zeros_like(bin_idx.flatten())
@@ -130,4 +129,3 @@ def decoding_pointcloud(output_matrix, grid_mask):
     pred = np.where(pred)
     decoded_output[np.isin(grid_mask, pred)] = 1
     return decoded_output
-
