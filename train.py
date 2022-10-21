@@ -1,13 +1,14 @@
 import os
 import torch
+import shutil
+import argparse
 import numpy as np
 from tqdm import tqdm
-from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
+from torch.utils.data import DataLoader
 
 from eval import evalutation
 from src.model.model import GroundNet
-from src.model.loss import SoftmaxWithloss
 from src.data.SemanticKITTI import SemanticKITTI
 from src.data.dataset import decoding_pointcloud
 from src.utils.utils import (
@@ -22,6 +23,12 @@ from src.utils.utils import (
 def init_model(cfg):
     model = GroundNet()
     return model
+
+
+def save_config(dst_path, src_path="config.yaml"):
+    if not os.path.isdir(dst_path):
+        os.makedirs(dst_path)
+    shutil.copyfile(src_path, os.path.join(dst_path, "config.yaml"))
 
 
 def save_model(model, path):
@@ -64,30 +71,42 @@ def vis_output(output, batch_data, select_idx=0, ground_label=[9, 11, 12, 17]):
     ground_[np.isin(label_, ground_label)] = 1
     plt.subplot(2, 2, 1)
     plt.scatter(pcd_[:, 0], pcd_[:, 1], c=label_, s=1)
+    plt.colorbar()
     plt.subplot(2, 2, 2)
     plt.scatter(pcd_[:, 0], pcd_[:, 1], c=ground_, s=1)
+    plt.colorbar()
     plt.subplot(2, 2, 3)
     plt.scatter(pcd_[:, 0], pcd_[:, 1], c=decoded_output, s=1)
+    plt.colorbar()
     plt.subplot(2, 2, 4)
     plt.scatter(pcd_[:, 0], pcd_[:, 1], c=ground_ == decoded_output, s=1, cmap="prism")
+    plt.colorbar()
 
     return fig
 
 
-def train(cfg, trainset, validset):
+def train(cfg, trainset, validset, cfg_path, logger):
+    """logger.info("Create preprocessed dataset.")
+    trainset.create_prepared_data()
+    validset.create_prepared_data()"""  ## TODO
+
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    sw = SummaryWriterAvg(log_dir=cfg.path.exp_path, flush_secs=10, dump_period=2)
+    save_config(cfg.path.exp_path, cfg_path)
+    logger.info("Save config. " + cfg.path.exp_path)
+
+    sw = SummaryWriterAvg(log_dir=cfg.path.exp_path, flush_secs=10, dump_period=1)
     model = init_model(cfg).to(device)
     param = cfg.learn
-    loss_criterion = SoftmaxWithloss()
-    # loss_criterion = get_loss_function(cfg.model.loss)
-    optim = torch.optim.Adam(model.parameters(), lr=0.0005)
-    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optim, milestones=[80, 90], gamma=0.1)
+    loss_criterion = get_loss_function(cfg.model.loss)
+    optim = torch.optim.Adam(model.parameters(), lr=param.lr, weight_decay=param.weight_decay)
+    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optim, milestones=param.milestones, gamma=0.1)
 
-    train_dataloader = DataLoader(trainset, param.batch_size, drop_last=True, num_workers=8, collate_fn=batch_collate)
+    train_dataloader = DataLoader(
+        trainset, param.batch_size, shuffle=True, drop_last=True, num_workers=8, collate_fn=batch_collate
+    )
     valid_dataloader = DataLoader(validset, param.batch_size, drop_last=False, num_workers=8, collate_fn=batch_collate)
-
+    logger.info("Training Start")
     for epoch in tqdm(range(param.total_epoch)):
         sw.add_scalar(
             tag="learning_rate",
@@ -95,7 +114,7 @@ def train(cfg, trainset, validset):
             global_step=epoch,
         )
         for it, batch_data in enumerate(tqdm(train_dataloader, total=int(len(train_dataloader)))):
-            global_step = epoch * len(trainset) + it
+            global_step = epoch * int(len(train_dataloader)) + it
 
             # train
             model.train()
@@ -165,10 +184,14 @@ def train(cfg, trainset, validset):
 
 if __name__ == "__main__":
 
-    cfg = yaml_load("config.yaml")
-    logger = create_logger("../..", "tmp.log")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--cfg", required=True, help="config file path")
+    args = parser.parse_args()
+
+    cfg = yaml_load(args.cfg)
+    logger = create_logger("../..", "tmp.log")  ## TODO
 
     trainset = SemanticKITTI(cfg, logger)
     validset = SemanticKITTI(cfg, logger, split="valid")
 
-    train(cfg, trainset, validset)
+    train(cfg, trainset, validset, args.cfg, logger)

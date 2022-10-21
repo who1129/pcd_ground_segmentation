@@ -2,6 +2,9 @@ import os
 import yaml
 import glob
 import numpy as np
+from tqdm import tqdm
+from pathlib import Path
+
 from .dataset import DatasetTemplate
 
 
@@ -21,9 +24,17 @@ class SemanticKITTI(DatasetTemplate):
         seq_list = self.cfg.path.split[self.split]
         for sequence in seq_list:
             sequence = "{0:02d}".format(int(sequence))
-            self.label_paths.extend(
-                glob.glob(os.path.join(self.label_root, f"sequences/{sequence}/**/*.label"), recursive=True)
-            )
+            if self.split == "valid":
+                self.label_paths.extend(
+                    glob.glob(os.path.join(self.label_root, f"sequences/{sequence}/**/*.label"), recursive=True)
+                )
+            else:
+                tmp = np.array(
+                    glob.glob(os.path.join(self.label_root, f"sequences/{sequence}/**/*.label"), recursive=True)
+                )
+                mask = np.arange(0, tmp.shape[0]) % self.cfg.tmp.srate == 0
+                self.label_paths.extend(tmp[mask].tolist())
+
         self.logger.info(f"# of label file: {len(self.label_paths)}")
         for l_path in self.label_paths:
             p_path = (
@@ -45,7 +56,7 @@ class SemanticKITTI(DatasetTemplate):
         del_idx = np.where(pcd[:, :3] == [0.0, 0.0, 0.0])[0]
         return np.delete(pcd, del_idx, axis=0), del_idx
 
-    def load_batch(self, label_path):
+    def load_raw_data(self, label_path):
         pcd_path = (
             label_path.replace(self.label_root, self.pcd_root).replace(".label", ".bin").replace("labels", "velodyne")
         )
@@ -78,17 +89,49 @@ class SemanticKITTI(DatasetTemplate):
 
         return DATA
 
-    def __getitem__(self, index):
-        try:
-            label_path = self.label_paths[index]
-            label, pcd = self.load_batch(label_path)
+    ## TODO
+    def create_prepared_data(self):
+        pbar = tqdm(range(len(self.label_paths)))
+        pbar.set_description("create_data...")
+        for i in pbar:
+            label_path = self.label_paths[i]
+            label, pcd = self.load_raw_data(label_path)
             data_dict = {"label": label, "pcd": pcd}
             data_dict = self.prepare_data(data_dict)
-            return data_dict
-        except:
-            print(self.label_paths[index])
-            print(pcd.shape)
-            print(label.shape)
+
+            l_mat_path = Path(label_path.replace(self.cfg.path.data_root, self.cfg.path.create_data))
+            pre, _ = os.path.splitext(l_mat_path)
+            i_mat_path = pre + ".input"
+            grid_path = pre + ".grid"
+            bin_path = pre + ".bin"
+
+            os.makedirs(os.path.dirname(l_mat_path), exist_ok=True)
+            np.save(l_mat_path, data_dict["label_matrix"])
+            np.save(i_mat_path, data_dict["input_matrix"])
+            np.save(grid_path, data_dict["grid_mask"])
+            np.save(bin_path, data_dict["bin_idx"])
+
+    def load_prepared_data(self, label_path, data_dict):
+        l_mat_path = Path(label_path.replace(self.cfg.path.data_root, self.cfg.path.create_data))
+        pre, _ = os.path.splitext(l_mat_path)
+        i_mat_path = pre + ".input.npy"
+        grid_path = pre + ".grid.npy"
+        bin_path = pre + ".bin.npy"
+
+        data_dict["label_matrix"] = np.load(l_mat_path + ".npy")
+        data_dict["input_matrix"] = np.load(i_mat_path)
+        data_dict["grid_mask"] = np.load(grid_path)
+        data_dict["bin_idx"] = np.load(bin_path)
+
+        return data_dict
+
+    def __getitem__(self, index):
+        label_path = self.label_paths[index]
+        label, pcd = self.load_raw_data(label_path)
+        data_dict = {"label": label, "pcd": pcd}
+        data_dict = self.prepare_data(data_dict)
+        # data_dict = self.load_prepared_data(label_path, data_dict) ## TODO
+        return data_dict
 
     def __len__(self):
         return len(self.label_paths)

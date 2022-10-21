@@ -1,9 +1,45 @@
+import torch
+import argparse
 import numpy as np
-import yaml
+from tqdm import tqdm
+from torch.utils.data import DataLoader
+
+from src.data.SemanticKITTI import SemanticKITTI
+from src.data.dataset import decoding_pointcloud
+from src.model.model import GroundNet
 from src.utils.torch_ioueval import iouEval
+from src.utils.utils import (
+    yaml_load,
+    create_logger,
+    batch_collate,
+)
 
 
-def evalutation(preds, labels, DATA):
+def load_model(path):
+    model = GroundNet()
+    model.load_state_dict(torch.load(path))
+    return model
+
+
+def get_pred(output, batch_data):
+    output_ = output.detach().to("cpu").numpy()
+    grid_mask_ = batch_data["grid_mask"].detach().numpy()
+    label_ = batch_data["label"].detach().numpy()
+    point_cnt_ = batch_data["point_cnt"].detach().numpy()
+    pcd_ = batch_data["pcd"].detach().numpy()
+    label = []
+    pred = []
+    pcds = []
+    for i in range(label_.shape[0]):
+        cnt = int(point_cnt_[i])
+        pred.append(decoding_pointcloud(output_[i], grid_mask_[i])[:cnt])
+        label.append(label_[i][:cnt])
+        pcds.append(pcd_[i][:cnt])
+
+    return pred, label, pcds
+
+
+def evalutation(preds, labels, DATA, pcds):
     # get number of interest classes, and the label mappings
     class_strings = DATA["labels"]
     class_remap = DATA["learning_map"]
@@ -18,7 +54,8 @@ def evalutation(preds, labels, DATA):
     remap_lut = np.zeros((maxkey + 100), dtype=np.int32)
     remap_lut[list(class_remap.keys())] = list(class_remap.values())
 
-    ignore = [1, 2, 3, 4, 5, 6, 7, 8, 10, 13, 14, 15, 16, 18, 19]
+    ##ignore = [1, 2, 3, 4, 5, 6, 7, 8, 10, 13, 14, 15, 16, 18, 19]
+    ignore = []
     print("Ignoring xentropy class ", ignore, " in IoU evaluation")
 
     evaluator = iouEval(nr_classes, ignore)
@@ -28,13 +65,15 @@ def evalutation(preds, labels, DATA):
     count = 0
     print("Evaluating sequences: ", end="", flush=True)
     # open each file, get the tensor, and make the iou comparison
-    for label, pred in zip(labels, preds):
+    for label, pred, pcd in zip(labels, preds, pcds):
         count += 1
         # pred ground label to original label
         ground_label = [9, 11, 12, 17]
         tmp = np.zeros_like(pred)
         tmp[np.isin(label, ground_label)] = 1
+
         pred = np.where(np.logical_and(pred == 1, tmp), label, 0)
+        pred = np.where(np.logical_and(pred == 0, tmp == 0), label, pred)
         evaluator.addBatch(pred.astype(np.int64), label.astype(np.int64))
 
     # when I am done, print the evaluation
@@ -57,3 +96,40 @@ def evalutation(preds, labels, DATA):
                 )
             )
     return m_accuracy, m_jaccard, m_recall
+
+
+def eval(cfg, validset, ckpt_path):
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    model = load_model(ckpt_path).to(device)
+    param = cfg.learn
+    valid_dataloader = DataLoader(validset, param.batch_size, drop_last=False, num_workers=8, collate_fn=batch_collate)
+
+    label_list = []
+    pred_list = []
+    pcd_list = []
+    for it, batch_data in enumerate(tqdm(valid_dataloader, total=int(len(valid_dataloader)))):
+        model.eval()
+        with torch.no_grad():
+            input_matrix = batch_data["input_matrix"].to(device)
+            output = model(input_matrix)
+            pred, label, pcd = get_pred(output, batch_data)
+            label_list.extend(label)
+            pred_list.extend(pred)
+            pcd_list.extend(pcd)
+
+    m_accuracy, m_jaccard, m_recall = evalutation(pred_list, label_list, validset.label_cfg, pcd_list)
+
+
+if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--cfg", required=True, help="config file path")
+    parser.add_argument("--ckpt", required=True, help="model ckpt path")
+    args = parser.parse_args()
+
+    cfg = yaml_load(args.cfg)
+    logger = create_logger("../..", "tmp.log")  ## TODO
+
+    validset = SemanticKITTI(cfg, logger, split="valid")
+
+    eval(cfg, validset, args.ckpt)

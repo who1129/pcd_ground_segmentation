@@ -1,5 +1,3 @@
-from xmlrpc.client import boolean
-from matplotlib.pyplot import axis
 import numpy as np
 from scipy import interpolate
 import torch.utils.data as torch_data
@@ -50,8 +48,10 @@ class DatasetTemplate(torch_data.Dataset):
                 depth = np.linalg.norm(bin_pts[:, :2], axis=1)
                 depth = np.mean(depth)
                 depth = np.log(depth)
-                height = np.mean(bin_pts[:, 2]) / 3
+                height = bin_pts[:, 2] / H
+                height = np.mean(height)
                 intensity = np.mean(bin_pts[:, 3])
+
             else:
                 depth, height, intensity = [0.0, 0.0, 0.0]
 
@@ -109,7 +109,7 @@ class DatasetTemplate(torch_data.Dataset):
         pcd = input_dict["pcd"]
 
         label, pcd = self.normalize_range(label, pcd, self.cfg.pointcloud)
-        # to-do:augmentation
+        ## TODO:augmentation
         input_matrix, label_matrix, grid_mask, bin_idx = self.encoding_pointcloud(label, pcd, self.cfg)
         input_dict["pcd"] = pcd
         input_dict["label"] = label

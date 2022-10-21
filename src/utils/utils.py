@@ -6,6 +6,8 @@ import numpy as np
 from easydict import EasyDict as edict
 from torch.utils.tensorboard import SummaryWriter
 
+from src.model.loss import *
+
 
 def yaml_load(fileName):
     fc = None
@@ -54,10 +56,12 @@ def batch_collate(pre_batch_data):
 
 
 def get_loss_function(loss_name):
-    if loss_name == "CrossEntropyLoss":
-        return torch.nn.CrossEntropyLoss(ignore_index=-1, reduction="mean")
-    elif loss_name == "BCEWithLogtisLoss":
-        return torch.nn.BCEWithLogitsLoss()
+    if loss_name == "SoftmaxWithloss":
+        return SoftmaxWithloss()
+    elif loss_name == "MSE":
+        return MSE()
+    elif loss_name == "FocalLoss":
+        return FocalLoss()
     else:
         raise ModuleNotFoundError
 

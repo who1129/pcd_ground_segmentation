@@ -1,9 +1,10 @@
 path:
-  data_root: "/Users/milla/Documents/dataset"
-  label_root: "/Users/milla/Documents/dataset/labels"
-  pcd_root: "/Users/milla/Documents/dataset/pointclouds"
-  exp_path: "/Users/milla/Documents/pcd_ground_segmentation/experiments"
-  split: # sequence numbers
+  data_root: "/home/ext/SemanticKITTI/dataset"
+  label_root: "/home/ext/SemanticKITTI/dataset"
+  pcd_root: "/home/ext/SemanticKITTI/dataset"
+  create_data: "/home/ext/SemanticKITTI/dataset/create"
+  exp_path: "/home/datalab/Milla/pcd_ground_segmentation/experiments/SoftmaxWithloss/12_srate5"
+  split:
     train:
       - 0
       - 1
@@ -31,19 +32,27 @@ path:
       - 21
 
 encoder:
-  H: 3 # z normalization constant
+  H: 1 # z normalization constant
   R_unit: 0.5 # divided bins(unit=m)
-  C: 90 # divided cones (unit=pcs)
+  C: 360 # divided cones (unit=pcs)
 
 pointcloud:
   target_range: [30, -3, 5] # [radius z_min z_max]
   
 learn:
-  total_epoch: 100
-  save_interval: 2
-  batch_size: 4
+  total_epoch: 25
+  save_interval: 10
+  batch_size: 8
+  #lr: 0.0005
+  #weight_decay: 0.1
+  lr: 0.0001
+  weight_decay: 0.9
+  milestones: [20, 23]
   
 
 model:
   # https://github.com/martin-velas/but_velodyne_cnn/blob/master/networks/L03-deconv-inc-multich/net_train_val.prototxt
-  loss: "BCEWithLogtisLoss"
+  loss: "SoftmaxWithloss" #SoftmaxWithloss" #MSE  #FocalLoss
+
+tmp:
+  srate: 5
