@@ -11,11 +11,7 @@ from src.data.SemanticKITTI import SemanticKITTI
 from src.data.dataset import decoding_pointcloud
 from src.model.model import GroundNet
 from src.utils.torch_ioueval import iouEval
-from src.utils.utils import (
-    yaml_load,
-    create_logger,
-    batch_collate,
-)
+from src.utils.utils import yaml_load, create_logger, batch_collate, TqdmToLogger
 
 
 def load_model(path):
@@ -42,7 +38,7 @@ def get_pred(output, batch_data):
     return pred, label, pcds
 
 
-def evalutation(preds, labels, DATA):
+def evalutation(preds, labels, DATA, logger):
     # get number of interest classes, and the label mappings
     class_strings = DATA["labels"]
     class_remap = DATA["learning_map"]
@@ -59,14 +55,13 @@ def evalutation(preds, labels, DATA):
 
     ##ignore = [1, 2, 3, 4, 5, 6, 7, 8, 10, 13, 14, 15, 16, 18, 19]
     ignore = []
-    print("Ignoring xentropy class ", ignore, " in IoU evaluation")
+    logger.info("Ignoring xentropy class " + " ".join(ignore) + " in IoU evaluation")
 
     evaluator = iouEval(nr_classes, ignore)
     evaluator.reset()
 
     progress = 10
     count = 0
-    print("Evaluating sequences: ", end="", flush=True)
     # open each file, get the tensor, and make the iou comparison
     for label, pred in zip(labels, preds):
         count += 1
@@ -90,7 +85,7 @@ def evalutation(preds, labels, DATA):
     m_jaccard, class_jaccard = evaluator.getIoU()
     m_recall = evaluator.getrecall()
 
-    print(
+    logger.info(
         "Validation set:\n"
         "Acc avg {m_accuracy:.3f}\n"
         "IoU avg {m_jaccard:.3f}\n"
@@ -99,7 +94,7 @@ def evalutation(preds, labels, DATA):
     # print also classwise
     for i, jacc in enumerate(class_jaccard):
         if i not in ignore:
-            print(
+            logger.info(
                 "IoU class {i:} [{class_str:}] = {jacc:.3f}".format(
                     i=i, class_str=class_strings[class_inv_remap[i]], jacc=jacc
                 )
@@ -167,7 +162,8 @@ def vis_output(output, batch_data, select_idx=0, ground_label=[9, 11, 12, 17], i
     return fig
 
 
-def eval(cfg, validset, ckpt_path):
+def eval(cfg, validset, ckpt_path, logger):
+
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model = load_model(ckpt_path).to(device)
     param = cfg.learn
@@ -177,7 +173,11 @@ def eval(cfg, validset, ckpt_path):
     pred_list = []
     pcd_list = []
 
-    for it, batch_data in enumerate(tqdm(valid_dataloader, total=int(len(valid_dataloader)))):
+    tqdm_out = TqdmToLogger(logger)
+    tbar = tqdm(valid_dataloader, total=len(valid_dataloader), file=tqdm_out, ncols=100)
+
+    logger.info("Model Inference.")
+    for it, batch_data in enumerate(tbar):
         model.eval()
         with torch.no_grad():
             input_matrix = batch_data["input_matrix"].to(device)
@@ -192,20 +192,23 @@ def eval(cfg, validset, ckpt_path):
                 np.save(f"output/{it}_pred", pred)
                 np.save(f"output/{it}_label", label)
                 np.save(f"output/{it}_pcd", pcd)
-
-    m_accuracy, m_jaccard, m_recall = evalutation(pred_list, label_list, validset.label_cfg, pcd_list)
+    logger.info("Inference done.")
+    m_accuracy, m_jaccard, m_recall = evalutation(pred_list, label_list, validset.label_cfg, logger)
+    logger.info("Evaluation done.")
 
 
 if __name__ == "__main__":
+    try:
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--cfg", required=True, help="config file path")
+        parser.add_argument("--ckpt", required=True, help="model ckpt path")
+        args = parser.parse_args()
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--cfg", required=True, help="config file path")
-    parser.add_argument("--ckpt", required=True, help="model ckpt path")
-    args = parser.parse_args()
+        cfg = yaml_load(args.cfg)
+        logger = create_logger(cfg.path.log_path, "eval")
 
-    cfg = yaml_load(args.cfg)
-    logger = create_logger("../..", "tmp.log")  ## TODO
+        validset = SemanticKITTI(cfg, logger, split="valid")
 
-    validset = SemanticKITTI(cfg, logger, split="valid")
-
-    eval(cfg, validset, args.ckpt)
+        eval(cfg, validset, args.ckpt, logger)
+    except Exception as e:
+        logger.exception(e)

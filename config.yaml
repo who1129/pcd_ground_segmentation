@@ -2,7 +2,8 @@ path:
   data_root: "/home/ext/SemanticKITTI/dataset"
   label_root: "/home/ext/SemanticKITTI/dataset"
   pcd_root: "/home/ext/SemanticKITTI/dataset"
-  exp_path: "/home/datalab/Milla/pcd_ground_segmentation/experiments/14_srate15-interpolate_ori"
+  exp_path: "/home/datalab/Milla/pcd_ground_segmentation/experiments/tmp"
+  log_path: "/home/datalab/Milla/pcd_ground_segmentation/experiments/tmp"
   split: # sequence
     train:
       - 0
@@ -60,7 +61,7 @@ model:
   loss: "SoftmaxWithloss" #SoftmaxWithloss" #MSE  #FocalLoss
 
 tmp:
-  load_train_data_interval: 20
+  load_train_data_interval: 0
 
 eval:
   vis_interval: 100

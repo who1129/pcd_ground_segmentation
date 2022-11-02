@@ -32,7 +32,7 @@ class SemanticKITTI(DatasetTemplate):
                 """tmp = np.array(
                     glob.glob(os.path.join(self.label_root, f"sequences/{sequence}/**/*.label"), recursive=True)
                 )
-                mask = np.arange(0, tmp.shape[0]) % 10 == 0
+                mask = np.arange(0, tmp.shape[0]) % 100 == 0
                 self.label_paths.extend(tmp[mask].tolist())"""
             else:
                 tmp = np.array(

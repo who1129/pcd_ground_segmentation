@@ -1,4 +1,7 @@
 import os
+import io
+import sys
+import time
 import yaml
 import torch
 import logging
@@ -17,18 +20,45 @@ def yaml_load(fileName):
     return fc
 
 
-def create_logger(save_path, filename="log"):
+class TqdmToLogger(io.StringIO):
+    logger = None
+    level = None
+    buf = ""
+
+    def __init__(self, logger, level=None, mininterval=1):
+        super(TqdmToLogger, self).__init__()
+        self.logger = logger
+        self.level = level or logging.INFO
+        self.mininterval = mininterval
+        self.last_time = 0
+
+    def write(self, buf):
+        self.buf = buf.strip("\r\n\t ")
+
+    def flush(self):
+        if len(self.buf) > 0 and time.time() - self.last_time > self.mininterval:
+            self.logger.log(self.level, self.buf)
+            self.last_time = time.time()
+
+
+def create_logger(save_path, phase):
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
 
     formatter = logging.Formatter(fmt="[%(asctime)s] - %(message)s", datefmt="%y/%m/%d %H:%M:%S")
-    stream_handler = logging.StreamHandler()
-    stream_handler.setFormatter(formatter)
-    logger.addHandler(stream_handler)
 
+    t = time.strftime("%H:%M:%S")
+    filename = f"{phase}_{t}.log"
+    os.makedirs(save_path, exist_ok=True)
     file_handler = logging.FileHandler(os.path.join(save_path, filename), mode="w")
+    file_handler.setFormatter(formatter)
     file_handler.setLevel(logging.INFO)
     logger.addHandler(file_handler)
+
+    stream_handler = logging.StreamHandler(stream=sys.stdout)
+    stream_handler.setFormatter(formatter)
+    stream_handler.setLevel(logging.INFO)
+    logger.addHandler(stream_handler)
 
     return logger
 

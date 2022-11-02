@@ -11,13 +11,7 @@ from eval import evalutation
 from src.model.model import GroundNet
 from src.data.SemanticKITTI import SemanticKITTI
 from src.data.dataset import decoding_pointcloud
-from src.utils.utils import (
-    yaml_load,
-    create_logger,
-    batch_collate,
-    get_loss_function,
-    SummaryWriterAvg,
-)
+from src.utils.utils import yaml_load, create_logger, batch_collate, get_loss_function, SummaryWriterAvg, TqdmToLogger
 
 
 def init_model(cfg):
@@ -93,7 +87,7 @@ def train(cfg, trainset, validset, cfg_path, logger):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     save_config(cfg.path.exp_path, cfg_path)
-    logger.info("Save config. " + cfg.path.exp_path)
+    logger.info("Save config path: " + cfg.path.exp_path)
 
     sw = SummaryWriterAvg(log_dir=cfg.path.exp_path, flush_secs=10, dump_period=1)
     model = init_model(cfg).to(device)
@@ -107,13 +101,20 @@ def train(cfg, trainset, validset, cfg_path, logger):
     )
     valid_dataloader = DataLoader(validset, param.batch_size, drop_last=False, num_workers=8, collate_fn=batch_collate)
     logger.info("Training Start")
-    for epoch in tqdm(range(param.total_epoch)):
+
+    tbar = tqdm()
+    tqdm_out = TqdmToLogger(logger)
+    tbar = tqdm(range(param.total_epoch), file=tqdm_out, ncols=100, desc="epoch")
+
+    for epoch in tbar:
         sw.add_scalar(
             tag="learning_rate",
             value=optim.param_groups[0]["lr"],
             global_step=epoch,
         )
-        for it, batch_data in enumerate(tqdm(train_dataloader, total=int(len(train_dataloader)))):
+        it_tbar = tqdm(train_dataloader, total=len(train_dataloader), file=tqdm_out, ncols=100, desc="it")
+
+        for it, batch_data in enumerate(it_tbar):
             global_step = epoch * int(len(train_dataloader)) + it
 
             # train
@@ -155,7 +156,7 @@ def train(cfg, trainset, validset, cfg_path, logger):
             if it in [0, 1000]:
                 vis = vis_output(output, batch_data)
                 sw.add_figure(tag=f"val_vis_{it}", figure=vis, global_step=epoch)
-        m_accuracy, m_jaccard, m_recall = evalutation(pred_list, label_list, validset.label_cfg)
+        m_accuracy, m_jaccard, m_recall = evalutation(pred_list, label_list, validset.label_cfg, logger)
         sw.add_scalar(
             tag="valid/m_accuracy",
             value=m_accuracy,
@@ -180,18 +181,21 @@ def train(cfg, trainset, validset, cfg_path, logger):
         if epoch % param.save_interval == 0:
             save_model(model, os.path.join(cfg.path.exp_path, f"ckpts/{epoch}.pth"))
         lr_scheduler.step()
+    logger.info("Training End")
 
 
 if __name__ == "__main__":
+    try:
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--cfg", required=True, help="config file path")
+        args = parser.parse_args()
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--cfg", required=True, help="config file path")
-    args = parser.parse_args()
+        cfg = yaml_load(args.cfg)
+        logger = create_logger(cfg.path.log_path, "train")
 
-    cfg = yaml_load(args.cfg)
-    logger = create_logger("../..", "tmp.log")  ## TODO
+        trainset = SemanticKITTI(cfg, logger)
+        validset = SemanticKITTI(cfg, logger, split="valid")
 
-    trainset = SemanticKITTI(cfg, logger)
-    validset = SemanticKITTI(cfg, logger, split="valid")
-
-    train(cfg, trainset, validset, args.cfg, logger)
+        train(cfg, trainset, validset, args.cfg, logger)
+    except Exception as e:
+        logger.exception(e)
