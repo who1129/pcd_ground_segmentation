@@ -2,9 +2,8 @@ path:
   data_root: "/home/ext/SemanticKITTI/dataset"
   label_root: "/home/ext/SemanticKITTI/dataset"
   pcd_root: "/home/ext/SemanticKITTI/dataset"
-  create_data: "/home/ext/SemanticKITTI/dataset/create"
-  exp_path: "/home/datalab/Milla/pcd_ground_segmentation/experiments/SoftmaxWithloss/12_srate5"
-  split:
+  exp_path: "/home/datalab/Milla/pcd_ground_segmentation/experiments/14_srate15-interpolate_ori"
+  split: # sequence
     train:
       - 0
       - 1
@@ -37,22 +36,32 @@ encoder:
   C: 360 # divided cones (unit=pcs)
 
 pointcloud:
-  target_range: [30, -3, 5] # [radius z_min z_max]
+  target_range: [50, -3, 5] # [radius z_min z_max]
   
 learn:
-  total_epoch: 25
+  total_epoch: 20
   save_interval: 10
   batch_size: 8
   #lr: 0.0005
   #weight_decay: 0.1
   lr: 0.0001
   weight_decay: 0.9
-  milestones: [20, 23]
+  milestones: [18, 19]
   
+
+augmentation:
+  height: [-3, 3]
+  flip: True
+  prob: 0.5
+
 
 model:
   # https://github.com/martin-velas/but_velodyne_cnn/blob/master/networks/L03-deconv-inc-multich/net_train_val.prototxt
   loss: "SoftmaxWithloss" #SoftmaxWithloss" #MSE  #FocalLoss
 
 tmp:
-  srate: 5
+  load_train_data_interval: 20
+
+eval:
+  vis_interval: 100
+  vis_path: 'eval_vis'

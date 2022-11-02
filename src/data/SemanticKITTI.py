@@ -1,6 +1,7 @@
 import os
 import yaml
 import glob
+import random
 import numpy as np
 from tqdm import tqdm
 from pathlib import Path
@@ -28,11 +29,16 @@ class SemanticKITTI(DatasetTemplate):
                 self.label_paths.extend(
                     glob.glob(os.path.join(self.label_root, f"sequences/{sequence}/**/*.label"), recursive=True)
                 )
+                """tmp = np.array(
+                    glob.glob(os.path.join(self.label_root, f"sequences/{sequence}/**/*.label"), recursive=True)
+                )
+                mask = np.arange(0, tmp.shape[0]) % 10 == 0
+                self.label_paths.extend(tmp[mask].tolist())"""
             else:
                 tmp = np.array(
                     glob.glob(os.path.join(self.label_root, f"sequences/{sequence}/**/*.label"), recursive=True)
                 )
-                mask = np.arange(0, tmp.shape[0]) % self.cfg.tmp.srate == 0
+                mask = np.arange(0, tmp.shape[0]) % self.cfg.tmp.load_train_data_interval == 0
                 self.label_paths.extend(tmp[mask].tolist())
 
         self.logger.info(f"# of label file: {len(self.label_paths)}")
@@ -125,9 +131,24 @@ class SemanticKITTI(DatasetTemplate):
 
         return data_dict
 
+    def augmentation_data(self, pcd, param):
+        random.seed(0)
+        if random.random() < param.prob:
+            min, max = param.height
+            pcd += random.randint(min, max)
+        if random.random() < param.prob:
+            pcd[:, 0] *= -1
+        if random.random() < param.prob:
+            pcd[:, 1] *= -1
+
+        return pcd
+
     def __getitem__(self, index):
         label_path = self.label_paths[index]
         label, pcd = self.load_raw_data(label_path)
+        # augmentation
+        if self.split == "train":
+            pcd = self.augmentation_data(pcd, param=self.cfg.augmentation)
         data_dict = {"label": label, "pcd": pcd}
         data_dict = self.prepare_data(data_dict)
         # data_dict = self.load_prepared_data(label_path, data_dict) ## TODO

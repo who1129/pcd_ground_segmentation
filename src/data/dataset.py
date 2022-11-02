@@ -53,7 +53,7 @@ class DatasetTemplate(torch_data.Dataset):
                 intensity = np.mean(bin_pts[:, 3])
 
             else:
-                depth, height, intensity = [0.0, 0.0, 0.0]
+                depth, height, intensity = [np.nan, np.nan, np.nan]
 
             feature = [depth, height, intensity]
             input_matrix.append(feature)
@@ -69,10 +69,9 @@ class DatasetTemplate(torch_data.Dataset):
         input_matrix = np.array(input_matrix).reshape(R, C, 3)
         label_matrix = np.array([label_matrix_non_ground, label_matrix_ground]).reshape(2, R, C)
         input_matrix = np.einsum("ijk->kij", input_matrix)
-
         # interpolate empty bins
-        for i in range(3):
-            c = input_matrix[:, :, i]
+        for i in range(input_matrix.shape[0]):
+            c = input_matrix[i, :, :]
             x = np.arange(0, c.shape[1])
             y = np.arange(0, c.shape[0])
             # mask invalid values
@@ -84,7 +83,7 @@ class DatasetTemplate(torch_data.Dataset):
             newarr = array[~array.mask]
 
             interpolated_channel = interpolate.griddata((x1, y1), newarr.ravel(), (xx, yy), method="nearest")
-            input_matrix[:, :, i] = interpolated_channel
+            input_matrix[i, :, :] = interpolated_channel
 
         return input_matrix, label_matrix, grid_mask, bin_idx
 

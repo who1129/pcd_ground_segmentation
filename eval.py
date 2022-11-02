@@ -1,8 +1,11 @@
+import os
 import torch
 import argparse
 import numpy as np
 from tqdm import tqdm
+import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
+
 
 from src.data.SemanticKITTI import SemanticKITTI
 from src.data.dataset import decoding_pointcloud
@@ -39,7 +42,7 @@ def get_pred(output, batch_data):
     return pred, label, pcds
 
 
-def evalutation(preds, labels, DATA, pcds):
+def evalutation(preds, labels, DATA):
     # get number of interest classes, and the label mappings
     class_strings = DATA["labels"]
     class_remap = DATA["learning_map"]
@@ -65,15 +68,21 @@ def evalutation(preds, labels, DATA, pcds):
     count = 0
     print("Evaluating sequences: ", end="", flush=True)
     # open each file, get the tensor, and make the iou comparison
-    for label, pred, pcd in zip(labels, preds, pcds):
+    for label, pred in zip(labels, preds):
         count += 1
         # pred ground label to original label
         ground_label = [9, 11, 12, 17]
         tmp = np.zeros_like(pred)
         tmp[np.isin(label, ground_label)] = 1
 
+        # accuracy with label
+        ## pred = np.where(pred == 1, label, 0)
+        ## pred = np.where(np.logical_and(pred == 0, tmp != 0), label, pred)
+
+        # only ground accuracy
         pred = np.where(np.logical_and(pred == 1, tmp), label, 0)
         pred = np.where(np.logical_and(pred == 0, tmp == 0), label, pred)
+
         evaluator.addBatch(pred.astype(np.int64), label.astype(np.int64))
 
     # when I am done, print the evaluation
@@ -98,6 +107,66 @@ def evalutation(preds, labels, DATA, pcds):
     return m_accuracy, m_jaccard, m_recall
 
 
+def vis_output(output, batch_data, select_idx=0, ground_label=[9, 11, 12, 17], it=0, path="eval_vis"):
+    idx = select_idx
+    output_ = output[idx].detach().to("cpu").numpy()
+    grid_mask_ = batch_data["grid_mask"][idx].detach().numpy()
+    pcd_ = batch_data["pcd"][idx].detach().numpy()
+    label_ = batch_data["label"][idx].detach().numpy()
+    decoded_output = decoding_pointcloud(output_, grid_mask_)
+
+    fig = plt.figure(figsize=(15, 15))
+    plt.axes().set_aspect("equal")
+
+    ground_ = np.zeros_like(label_)
+    ground_[np.isin(label_, ground_label)] = 1
+
+    plt.subplot(2, 2, 1)
+    plt.scatter(pcd_[:, 0], pcd_[:, 1], c=label_, s=1)
+    v = np.linspace(0, 18, 19, endpoint=True)
+    plt.colorbar(ticks=v)
+    plt.title("original label")
+
+    plt.subplot(2, 2, 2)
+    plt.scatter(pcd_[:, 0], pcd_[:, 1], c=ground_, s=1)
+    v = np.linspace(0, 1, 2, endpoint=True)
+    plt.colorbar(ticks=v)
+    plt.title("ground/non-ground label")
+
+    plt.subplot(2, 2, 3)
+    plt.scatter(pcd_[:, 0], pcd_[:, 1], c=decoded_output, s=1)
+    v = np.linspace(0, 1, 2, endpoint=True)
+    plt.colorbar(ticks=v)
+    plt.title("predict")
+
+    plt.subplot(2, 2, 4)
+    color = np.zeros_like(ground_)
+    tp = ground_ == decoded_output
+    color[tp] = 0
+    fp = (ground_ == 0) & (decoded_output == 1)
+    color[fp] = 1
+    fn = (ground_ == 1) & (decoded_output == 0)
+    color[fn] = 2
+    plt.scatter(pcd_[:, 0], pcd_[:, 1], c=color, s=1, cmap="jet")
+    v = np.linspace(0, 2, 3, endpoint=True)
+    plt.colorbar(ticks=v)
+    plt.title("error\n TP=0, FP=1, FN=2")
+    os.makedirs(path, exist_ok=True)
+    plt.savefig(
+        f"{path}/{it}.png",
+        dpi="figure",
+        format=None,
+        metadata=None,
+        bbox_inches=None,
+        pad_inches=0.1,
+        facecolor="auto",
+        edgecolor="auto",
+        backend=None,
+    )
+
+    return fig
+
+
 def eval(cfg, validset, ckpt_path):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model = load_model(ckpt_path).to(device)
@@ -107,6 +176,7 @@ def eval(cfg, validset, ckpt_path):
     label_list = []
     pred_list = []
     pcd_list = []
+
     for it, batch_data in enumerate(tqdm(valid_dataloader, total=int(len(valid_dataloader)))):
         model.eval()
         with torch.no_grad():
@@ -116,6 +186,12 @@ def eval(cfg, validset, ckpt_path):
             label_list.extend(label)
             pred_list.extend(pred)
             pcd_list.extend(pcd)
+            if it % cfg.eval.vis_interval == 0:
+                _ = vis_output(output, batch_data, it=it, path=cfg.eval.vis_path)
+                np.save(f"output/{it}_ouptut", batch_data["grid_mask"].detach().numpy())
+                np.save(f"output/{it}_pred", pred)
+                np.save(f"output/{it}_label", label)
+                np.save(f"output/{it}_pcd", pcd)
 
     m_accuracy, m_jaccard, m_recall = evalutation(pred_list, label_list, validset.label_cfg, pcd_list)
 
