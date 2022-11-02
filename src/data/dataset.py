@@ -127,4 +127,5 @@ def decoding_pointcloud(output_matrix, grid_mask):
     pred = ground > non_ground
     pred = np.where(pred)
     decoded_output[np.isin(grid_mask, pred)] = 1
+
     return decoded_output

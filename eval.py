@@ -75,8 +75,9 @@ def evalutation(preds, labels, DATA, logger):
         ## pred = np.where(np.logical_and(pred == 0, tmp != 0), label, pred)
 
         # only ground accuracy
-        pred = np.where(np.logical_and(pred == 1, tmp), label, 0)
+        pred = np.where(np.logical_and(pred == 1, tmp == 1), label, pred)
         pred = np.where(np.logical_and(pred == 0, tmp == 0), label, pred)
+        pred = np.where(np.logical_and(pred == 1, tmp == 0), 0, pred)
 
         evaluator.addBatch(pred.astype(np.int64), label.astype(np.int64))
 
@@ -173,10 +174,10 @@ def eval(cfg, validset, ckpt_path, logger):
     pred_list = []
     pcd_list = []
 
+    logger.info("Model Inference.")
     tqdm_out = TqdmToLogger(logger)
     tbar = tqdm(valid_dataloader, total=len(valid_dataloader), file=tqdm_out, ncols=100)
 
-    logger.info("Model Inference.")
     for it, batch_data in enumerate(tbar):
         model.eval()
         with torch.no_grad():
@@ -198,17 +199,16 @@ def eval(cfg, validset, ckpt_path, logger):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--cfg", required=True, help="config file path")
+    parser.add_argument("--ckpt", required=True, help="model ckpt path")
+    args = parser.parse_args()
+
+    cfg = yaml_load(args.cfg)
+    logger = create_logger(cfg.path.log_path, "eval")
+
     try:
-        parser = argparse.ArgumentParser()
-        parser.add_argument("--cfg", required=True, help="config file path")
-        parser.add_argument("--ckpt", required=True, help="model ckpt path")
-        args = parser.parse_args()
-
-        cfg = yaml_load(args.cfg)
-        logger = create_logger(cfg.path.log_path, "eval")
-
         validset = SemanticKITTI(cfg, logger, split="valid")
-
         eval(cfg, validset, args.ckpt, logger)
     except Exception as e:
         logger.exception(e)

@@ -185,14 +185,14 @@ def train(cfg, trainset, validset, cfg_path, logger):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--cfg", required=True, help="config file path")
+    args = parser.parse_args()
+
+    cfg = yaml_load(args.cfg)
+    logger = create_logger(cfg.path.log_path, "train")
+
     try:
-        parser = argparse.ArgumentParser()
-        parser.add_argument("--cfg", required=True, help="config file path")
-        args = parser.parse_args()
-
-        cfg = yaml_load(args.cfg)
-        logger = create_logger(cfg.path.log_path, "train")
-
         trainset = SemanticKITTI(cfg, logger)
         validset = SemanticKITTI(cfg, logger, split="valid")
 
