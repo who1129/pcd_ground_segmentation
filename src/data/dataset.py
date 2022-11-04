@@ -4,14 +4,30 @@ import torch.utils.data as torch_data
 
 
 class DatasetTemplate(torch_data.Dataset):
-    def __init__(self):
+    def __init__(self, pcd_path, cfg):
         super().__init__()
+        self.pcd_path = pcd_path
+        self.cfg = cfg
 
     def __getitem__(self, index):
-        raise NotImplementedError
+        # load pcd
+        pcd = self._load_pcd(self.pcd_path[index])
+        # preprocess pcd
+        _, pcd = self.normalize_range(None, pcd, self.cfg.pointcloud)
+        input_matrix, _, grid_mask, bin_idx = self.encoding_pointcloud(None, pcd, self.cfg)
+        data_dict = {"pcd": pcd, "input_matrix": input_matrix, "grid_mask": grid_mask, "bin_idx": bin_idx}
+        return data_dict
 
-    def __len__():
-        raise NotImplementedError
+    def __len__(self):
+        return len(self.pcd_path)
+
+    def _load_pcd(self, path):
+        pcd = np.fromfile(path, dtype=np.float32)
+        pcd = pcd.reshape((-1, 4))
+        if (np.where(pcd[:, :3] == [0.0, 0.0, 0.0])[0]).shape[0] == 0:
+            raise Exception("The pcd have [0.0, 0.0, 0.0] point." + path)
+
+        return pcd
 
     def encoding_pointcloud(self, label, pcd, param):
         H = param.encoder.H
@@ -34,8 +50,9 @@ class DatasetTemplate(torch_data.Dataset):
         label_matrix_non_ground = []
         label_matrix_ground = []
         ground_label = [9, 11, 12, 17]
-        label_ = np.zeros_like(label)
-        label_[np.isin(label, ground_label)] = 1
+        if label is not None:
+            label_ = np.zeros_like(label)
+            label_[np.isin(label, ground_label)] = 1
 
         grid_mask = bin_idx[polar_radius, polar_cone]
         label_matrix_non_ground = np.zeros_like(bin_idx.flatten())
@@ -57,17 +74,18 @@ class DatasetTemplate(torch_data.Dataset):
 
             feature = [depth, height, intensity]
             input_matrix.append(feature)
-
-            masked_label = label_[mask]
-            cnt_pts = masked_label.shape[0]
-            if cnt_pts == 0:
-                label_matrix_non_ground[i] = -1
-                label_matrix_ground[i] = -1
-            else:
-                label_matrix_non_ground[i] = (cnt_pts - np.sum(masked_label)) / cnt_pts
-                label_matrix_ground[i] = np.sum(masked_label) / cnt_pts
+            if label is not None:
+                masked_label = label_[mask]
+                cnt_pts = masked_label.shape[0]
+                if cnt_pts == 0:
+                    label_matrix_non_ground[i] = -1
+                    label_matrix_ground[i] = -1
+                else:
+                    label_matrix_non_ground[i] = (cnt_pts - np.sum(masked_label)) / cnt_pts
+                    label_matrix_ground[i] = np.sum(masked_label) / cnt_pts
         input_matrix = np.array(input_matrix).reshape(R, C, 3)
-        label_matrix = np.array([label_matrix_non_ground, label_matrix_ground]).reshape(2, R, C)
+        if label is not None:
+            label_matrix = np.array([label_matrix_non_ground, label_matrix_ground]).reshape(2, R, C)
         input_matrix = np.einsum("ijk->kij", input_matrix)
         # interpolate empty bins
         for i in range(input_matrix.shape[0]):
@@ -98,7 +116,8 @@ class DatasetTemplate(torch_data.Dataset):
         cond = r_cond * z_cond
 
         n_pcd = pcd[cond]
-        n_label = label[cond]
+        if label is not None:
+            n_label = label[cond]
 
         return n_label, n_pcd
 

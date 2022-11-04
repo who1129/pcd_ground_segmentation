@@ -56,12 +56,6 @@ class SemanticKITTI(DatasetTemplate):
 
         return np.delete(label, del_idx, axis=0)
 
-    def _load_pcd(self, path):
-        pcd = np.fromfile(path, dtype=np.float32)
-        pcd = pcd.reshape((-1, 4))
-        del_idx = np.where(pcd[:, :3] == [0.0, 0.0, 0.0])[0]
-        return np.delete(pcd, del_idx, axis=0), del_idx
-
     def load_raw_data(self, label_path):
         pcd_path = (
             label_path.replace(self.label_root, self.pcd_root).replace(".label", ".bin").replace("labels", "velodyne")

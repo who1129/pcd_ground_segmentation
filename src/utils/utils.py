@@ -64,6 +64,27 @@ def batch_collate(pre_batch_data):
     return batch_data
 
 
+def inf_batch_collate(pre_batch_data):
+    max_len = -1
+    for data in pre_batch_data:
+        if data["pcd"].shape[0] > max_len:
+            max_len = data["pcd"].shape[0]
+    for data in pre_batch_data:
+        # add original shape
+        ori_len = data["pcd"].shape[0]
+        data["point_cnt"] = np.array([ori_len])
+
+        # padding
+        data["pcd"] = np.pad(data["pcd"], ((0, max_len - ori_len), (0, 0)), "constant", constant_values=0)
+        data["grid_mask"] = np.pad(data["grid_mask"], ((0, max_len - ori_len)), "constant", constant_values=0)
+    batch_data = dict()
+    for key in pre_batch_data[0].keys():
+        batch_data[key] = torch.from_numpy(
+            np.stack(([pre_batch_data[i][key] for i in range(len(pre_batch_data))]), axis=0)
+        ).float()
+    return batch_data
+
+
 def get_loss_function(loss_name):
     if loss_name == "SoftmaxWithloss":
         return SoftmaxWithloss()
