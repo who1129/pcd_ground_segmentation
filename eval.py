@@ -11,7 +11,7 @@ from src.data.SemanticKITTI import SemanticKITTI
 from src.data.dataset import decoding_pointcloud
 from src.model.model import GroundNet
 from src.utils.torch_ioueval import iouEval
-from src.utils.utils import yaml_load, create_logger, batch_collate, TqdmToLogger
+from src.utils.utils import yaml_load, create_logger, batch_collate
 
 
 def load_model(path):
@@ -67,17 +67,16 @@ def evalutation(preds, labels, DATA, logger):
         count += 1
         # pred ground label to original label
         ground_label = [9, 11, 12, 17]
-        tmp = np.zeros_like(pred)
-        tmp[np.isin(label, ground_label)] = 1
+        is_ground = np.zeros_like(pred)
+        is_ground[np.isin(label, ground_label)] = 1
 
         # accuracy with label
         ## pred = np.where(pred == 1, label, 0)
         ## pred = np.where(np.logical_and(pred == 0, tmp != 0), label, pred)
 
         # only ground accuracy
-        pred = np.where(np.logical_and(pred == 1, tmp == 1), label, pred)
-        pred = np.where(np.logical_and(pred == 0, tmp == 0), label, pred)
-        pred = np.where(np.logical_and(pred == 1, tmp == 0), 0, pred)
+        pred = np.where(np.logical_and(pred == 1, is_ground == 1), label, pred)
+        pred = np.where(np.logical_and(pred == 0, is_ground == 0), label, pred)
 
         evaluator.addBatch(pred.astype(np.int64), label.astype(np.int64))
 
@@ -159,6 +158,7 @@ def vis_output(output, batch_data, select_idx=0, ground_label=[9, 11, 12, 17], i
         edgecolor="auto",
         backend=None,
     )
+    plt.clf()
 
     return fig
 
@@ -175,9 +175,8 @@ def eval(cfg, validset, ckpt_path, logger):
     pcd_list = []
 
     logger.info("Model Inference.")
-    tqdm_out = TqdmToLogger(logger)
-    tbar = tqdm(valid_dataloader, total=len(valid_dataloader), file=tqdm_out, ncols=100)
-
+    tbar = tqdm(valid_dataloader, total=len(valid_dataloader), ncols=100, ascii=True)
+    rate = None
     for it, batch_data in enumerate(tbar):
         model.eval()
         with torch.no_grad():
@@ -193,6 +192,8 @@ def eval(cfg, validset, ckpt_path, logger):
                 np.save(f"output/{it}_pred", pred)
                 np.save(f"output/{it}_label", label)
                 np.save(f"output/{it}_pcd", pcd)
+        rate = tbar.format_dict["rate"]
+    logger.info("FPS: " + str(round(rate, 3)))
     logger.info("Inference done.")
     m_accuracy, m_jaccard, m_recall = evalutation(pred_list, label_list, validset.label_cfg, logger)
     logger.info("Evaluation done.")

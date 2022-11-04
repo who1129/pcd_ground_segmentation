@@ -11,7 +11,7 @@ from eval import evalutation
 from src.model.model import GroundNet
 from src.data.SemanticKITTI import SemanticKITTI
 from src.data.dataset import decoding_pointcloud
-from src.utils.utils import yaml_load, create_logger, batch_collate, get_loss_function, SummaryWriterAvg, TqdmToLogger
+from src.utils.utils import yaml_load, create_logger, batch_collate, get_loss_function, SummaryWriterAvg
 
 
 def init_model(cfg):
@@ -103,9 +103,8 @@ def train(cfg, trainset, validset, cfg_path, logger):
     logger.info("Training Start")
 
     tbar = tqdm()
-    tqdm_out = TqdmToLogger(logger)
-    tbar = tqdm(range(param.total_epoch), file=tqdm_out, ncols=100, desc="epoch")
-
+    tbar = tqdm(range(param.total_epoch), ncols=100, desc="epoch")
+    rate = None
     for epoch in tbar:
         sw.add_scalar(
             tag="learning_rate",
@@ -113,7 +112,7 @@ def train(cfg, trainset, validset, cfg_path, logger):
             global_step=epoch,
         )
         it_tbar = tqdm(train_dataloader, total=len(train_dataloader), file=tqdm_out, ncols=100, desc="it")
-
+        it_rate = None
         for it, batch_data in enumerate(it_tbar):
             global_step = epoch * int(len(train_dataloader)) + it
 
@@ -136,6 +135,8 @@ def train(cfg, trainset, validset, cfg_path, logger):
             if it in [0, 1000]:
                 vis = vis_output(output, batch_data)
                 sw.add_figure(tag=f"train_vis_{it}", figure=vis, global_step=epoch)
+            it_rate = it_tbar.format_dict["rate"]
+        logger.info("it_FPS: " + str(round(it_rate, 3)))
 
         # valid
         valid_loss = []
@@ -181,7 +182,9 @@ def train(cfg, trainset, validset, cfg_path, logger):
         if epoch % param.save_interval == 0:
             save_model(model, os.path.join(cfg.path.exp_path, f"ckpts/{epoch}.pth"))
         lr_scheduler.step()
+        rate = tbar.format_dict["rate"]
     logger.info("Training End")
+    logger.info("epoch_FPS: " + str(round(rate, 3)))
 
 
 if __name__ == "__main__":

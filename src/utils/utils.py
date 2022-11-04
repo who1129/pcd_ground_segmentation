@@ -20,27 +20,6 @@ def yaml_load(fileName):
     return fc
 
 
-class TqdmToLogger(io.StringIO):
-    logger = None
-    level = None
-    buf = ""
-
-    def __init__(self, logger, level=None, mininterval=1):
-        super(TqdmToLogger, self).__init__()
-        self.logger = logger
-        self.level = level or logging.INFO
-        self.mininterval = mininterval
-        self.last_time = 0
-
-    def write(self, buf):
-        self.buf = buf.strip("\r\n\t ")
-
-    def flush(self):
-        if len(self.buf) > 0 and time.time() - self.last_time > self.mininterval:
-            self.logger.log(self.level, self.buf)
-            self.last_time = time.time()
-
-
 def create_logger(save_path, phase):
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
