@@ -22,7 +22,7 @@ class Inference:
             pcd_path (list(str)): pcd path list
             batch_size (int): batch size at inference phase
         Returns:
-            preds (list(np.array(int))): inferred class of each point (1=ground, 0=non-ground)
+            preds (list(list(int))): inferred class of each point (1=ground, 0=non-ground)
         """
         # load encoding data
         dataset = DatasetTemplate(pcd_path, self.cfg)
@@ -31,11 +31,10 @@ class Inference:
         with torch.no_grad():
             for it, batch_data in tqdm(enumerate(valid_dataloader), ncols=100):
                 input_matrix = batch_data["input_matrix"].to(self.device)
-                print(input_matrix.shape)
                 output = self.model(input_matrix)
                 # get decoded predict data
                 pred = self._get_pred(output, batch_data)
-                preds.append(pred)
+                preds.extend(pred)
 
         return preds
 
@@ -62,7 +61,8 @@ class Inference:
         pred = []
         for i in range(pcd_.shape[0]):
             cnt = int(point_cnt_[i])
-            pred.append(decoding_pointcloud(output_[i], grid_mask_[i])[:cnt])
+            decoded_pred = decoding_pointcloud(output_[i], grid_mask_[i])[:cnt].tolist()
+            pred.append(decoded_pred)
 
         return pred
 

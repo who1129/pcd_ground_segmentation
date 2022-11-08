@@ -37,32 +37,29 @@ encoder:
   C: 360 # divided cones (unit=pcs)
 
 pointcloud:
-  target_range: [50, -3, 5] # [radius z_min z_max]
+  target_range: [30, -3, 5] # [radius z_min z_max] 
   
 learn:
   total_epoch: 20
   save_interval: 10
   batch_size: 8
-  #lr: 0.0005
-  #weight_decay: 0.1
   lr: 0.0001
   weight_decay: 0.9
   milestones: [18, 19]
   
 
 augmentation:
-  height: [-3, 3]
-  flip: True
+  height: [-3, 3] # minmax values to be added to the z-axis
+  flip: True # x or y-axis flip
   prob: 0.5
 
 
 model:
-  # https://github.com/martin-velas/but_velodyne_cnn/blob/master/networks/L03-deconv-inc-multich/net_train_val.prototxt
-  loss: "SoftmaxWithloss" #SoftmaxWithloss" #MSE  #FocalLoss
+  loss: "SoftmaxWithloss" #MSE  #FocalLoss
 
-tmp:
-  load_train_data_interval: 0
+#tmp:
+#  load_train_data_interval: 400
 
 eval:
-  vis_interval: 100
+  vis_interval: 50
   vis_path: 'eval_vis'

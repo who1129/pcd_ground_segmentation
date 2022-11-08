@@ -70,11 +70,11 @@ def evalutation(preds, labels, DATA, logger):
         is_ground = np.zeros_like(pred)
         is_ground[np.isin(label, ground_label)] = 1
 
-        # accuracy with label
+        # only ground accuracy
         ## pred = np.where(pred == 1, label, 0)
         ## pred = np.where(np.logical_and(pred == 0, tmp != 0), label, pred)
 
-        # only ground accuracy
+        # accuracy with original label
         pred = np.where(np.logical_and(pred == 1, is_ground == 1), label, pred)
         pred = np.where(np.logical_and(pred == 0, is_ground == 0), label, pred)
 
@@ -188,10 +188,10 @@ def eval(cfg, validset, ckpt_path, logger):
             pcd_list.extend(pcd)
             if it % cfg.eval.vis_interval == 0:
                 _ = vis_output(output, batch_data, it=it, path=cfg.eval.vis_path)
-                np.save(f"output/{it}_ouptut", batch_data["grid_mask"].detach().numpy())
+                """np.save(f"output/{it}_ouptut", batch_data["grid_mask"].detach().numpy())
                 np.save(f"output/{it}_pred", pred)
                 np.save(f"output/{it}_label", label)
-                np.save(f"output/{it}_pcd", pcd)
+                np.save(f"output/{it}_pcd", pcd)"""
         rate = tbar.format_dict["rate"]
     logger.info("FPS: " + str(round(rate, 3)))
     logger.info("Inference done.")

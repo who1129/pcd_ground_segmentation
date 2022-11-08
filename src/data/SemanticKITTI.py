@@ -48,20 +48,20 @@ class SemanticKITTI(DatasetTemplate):
             )
             assert os.path.isfile(p_path), "This pcd file does not exist! >> " + p_path
 
-    def _load_label(self, path, del_idx):
+    def _load_label(self, path):
         label = np.fromfile(path, dtype=np.int32)
         label = label.reshape((-1))  # reshape to vector
         label = label & 0xFFFF  # get lower half for semantics
         label = self.label_cfg["remap_lut"][label]  # remap to xentropy format
 
-        return np.delete(label, del_idx, axis=0)
+        return label
 
     def load_raw_data(self, label_path):
         pcd_path = (
             label_path.replace(self.label_root, self.pcd_root).replace(".label", ".bin").replace("labels", "velodyne")
         )
-        pcd, del_idx = self._load_pcd(pcd_path)
-        label = self._load_label(label_path, del_idx)
+        pcd = self._load_pcd(pcd_path)
+        label = self._load_label(label_path)
 
         return label, pcd
 
@@ -130,10 +130,11 @@ class SemanticKITTI(DatasetTemplate):
         if random.random() < param.prob:
             min, max = param.height
             pcd += random.randint(min, max)
-        if random.random() < param.prob:
-            pcd[:, 0] *= -1
-        if random.random() < param.prob:
-            pcd[:, 1] *= -1
+        if param.flip:
+            if random.random() < param.prob:
+                pcd[:, 0] *= -1
+            if random.random() < param.prob:
+                pcd[:, 1] *= -1
 
         return pcd
 

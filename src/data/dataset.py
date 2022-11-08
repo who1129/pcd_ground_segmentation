@@ -24,8 +24,8 @@ class DatasetTemplate(torch_data.Dataset):
     def _load_pcd(self, path):
         pcd = np.fromfile(path, dtype=np.float32)
         pcd = pcd.reshape((-1, 4))
-        if (np.where(pcd[:, :3] == [0.0, 0.0, 0.0])[0]).shape[0] == 0:
-            raise Exception("The pcd have [0.0, 0.0, 0.0] point." + path)
+        """if (np.where(pcd[:, :3] == [0.0, 0.0, 0.0])[0]).shape[0] == 0:
+            raise Exception("The pcd have [0.0, 0.0, 0.0] point." + path)"""
 
         return pcd
 
