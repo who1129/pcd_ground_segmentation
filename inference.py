@@ -75,4 +75,4 @@ if __name__ == "__main__":
         "/home/ext/SemanticKITTI/dataset/sequences/00/velodyne/000000.bin",
         "/home/ext/SemanticKITTI/dataset/sequences/00/velodyne/000000.bin",
     ]
-    print(infr.predict(path))
+    print(len(infr.predict(path)))

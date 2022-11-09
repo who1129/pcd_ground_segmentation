@@ -1,6 +1,18 @@
+import time
 import numpy as np
 from scipy import interpolate
 import torch.utils.data as torch_data
+
+
+def logging_time(original_fn):
+    def wrapper_fn(*args, **kwargs):
+        start_time = time.time()
+        result = original_fn(*args, **kwargs)
+        end_time = time.time()
+        print("WorkingTime [{}]: {} sec".format(original_fn.__name__, round(end_time - start_time, 2)))
+        return result
+
+    return wrapper_fn
 
 
 class DatasetTemplate(torch_data.Dataset):
@@ -33,75 +45,96 @@ class DatasetTemplate(torch_data.Dataset):
         H = param.encoder.H
         R_unit = param.encoder.R_unit
         C = param.encoder.C
+
         target_range = param.pointcloud.target_range
         radius = target_range[0]
+        R = int(radius / R_unit)
         input_matrix = None
         label_matrix = None
 
-        # make polar bins
-        polar_cone_size = 360.0 / (C - 1)
-        angle = np.arctan2(pcd[:, 0], pcd[:, 1]) * 180 / np.pi
-        angle += 180.0
-        polar_cone = np.floor(angle / polar_cone_size).astype(int)
-        R = int(radius / R_unit)
-        d = np.sqrt(pcd[:, 0] ** 2 + pcd[:, 1] ** 2)
-        polar_radius = np.floor(d / (radius / (R - 1))).astype(int)
-        bin_idx = np.arange(0, R * C).reshape(R, C)
-        label_matrix_non_ground = []
-        label_matrix_ground = []
-        ground_label = [9, 11, 12, 17]
-        if label is not None:
-            label_ = np.zeros_like(label)
-            label_[np.isin(label, ground_label)] = 1
+        # @logging_time
+        def make_polar_bins():
+            polar_cone_size = 360.0 / (C - 1)
+            angle = np.arctan2(pcd[:, 0], pcd[:, 1]) * 180 / np.pi
+            angle += 180.0
+            polar_cone = np.floor(angle / polar_cone_size).astype(int)
 
-        grid_mask = bin_idx[polar_radius, polar_cone]
-        label_matrix_non_ground = np.zeros_like(bin_idx.flatten())
-        label_matrix_ground = np.zeros_like(bin_idx.flatten())
-        input_matrix = []
-        for i in bin_idx.flatten():
-            mask = grid_mask == i
-            if np.sum(mask) != 0:
-                bin_pts = pcd[mask]
-                depth = np.linalg.norm(bin_pts[:, :2], axis=1)
-                depth = np.mean(depth)
-                depth = np.log(depth)
-                height = bin_pts[:, 2] / H
-                height = np.mean(height)
-                intensity = np.mean(bin_pts[:, 3])
-
-            else:
-                depth, height, intensity = [np.nan, np.nan, np.nan]
-
-            feature = [depth, height, intensity]
-            input_matrix.append(feature)
+            d = np.sqrt(pcd[:, 0] ** 2 + pcd[:, 1] ** 2)
+            polar_radius = np.floor(d / (radius / (R - 1))).astype(int)
+            bin_idx = np.arange(0, R * C).reshape(R, C)
+            label_matrix_non_ground = []
+            label_matrix_ground = []
+            ground_label = [9, 11, 12, 17]
+            label_ = None
             if label is not None:
-                masked_label = label_[mask]
-                cnt_pts = masked_label.shape[0]
-                if cnt_pts == 0:
-                    label_matrix_non_ground[i] = -1
-                    label_matrix_ground[i] = -1
-                else:
-                    label_matrix_non_ground[i] = (cnt_pts - np.sum(masked_label)) / cnt_pts
-                    label_matrix_ground[i] = np.sum(masked_label) / cnt_pts
-        input_matrix = np.array(input_matrix).reshape(R, C, 3)
-        if label is not None:
-            label_matrix = np.array([label_matrix_non_ground, label_matrix_ground]).reshape(2, R, C)
-        input_matrix = np.einsum("ijk->kij", input_matrix)
-        # interpolate empty bins
-        for i in range(input_matrix.shape[0]):
-            c = input_matrix[i, :, :]
-            x = np.arange(0, c.shape[1])
-            y = np.arange(0, c.shape[0])
-            # mask invalid values
-            array = np.ma.masked_invalid(c)
-            xx, yy = np.meshgrid(x, y)
-            # get only the valid values
-            x1 = xx[~array.mask]
-            y1 = yy[~array.mask]
-            newarr = array[~array.mask]
+                label_ = np.zeros_like(label)
+                label_[np.isin(label, ground_label)] = 1
 
-            interpolated_channel = interpolate.griddata((x1, y1), newarr.ravel(), (xx, yy), method="nearest")
-            input_matrix[i, :, :] = interpolated_channel
+            grid_mask = bin_idx[polar_radius, polar_cone]
+            label_matrix_non_ground = np.zeros_like(bin_idx.flatten())
+            label_matrix_ground = np.zeros_like(bin_idx.flatten())
+            return grid_mask, label_matrix_ground, label_matrix_non_ground, bin_idx, label_
+
+        grid_mask, label_matrix_ground, label_matrix_non_ground, bin_idx, label_ = make_polar_bins()
+
+        # @logging_time
+        def initialize_input_matrix():
+            input_matrix = []
+            bin_dict = {idx: [] for idx in bin_idx.flatten()}
+            for idx, g in enumerate(grid_mask):
+                bin_dict[g].append(idx)
+
+            for i in bin_dict.keys():
+                mask = bin_dict[i]
+                if len(mask) != 0:
+                    bin_pts = pcd[mask]
+                    depth = np.log(np.mean(np.linalg.norm(bin_pts[:, :2], axis=1)))
+                    height = np.mean(bin_pts[:, 2] / H)
+                    intensity = np.mean(bin_pts[:, 3])
+                else:
+                    depth, height, intensity = [np.nan, np.nan, np.nan]
+
+                feature = [depth, height, intensity]
+                input_matrix.append(feature)
+
+                if label is not None:
+                    if len(mask) != 0:
+                        masked_label = label_[mask]
+                        cnt_pts = masked_label.shape[0]
+                        label_matrix_non_ground[i] = (cnt_pts - np.sum(masked_label)) / cnt_pts
+                        label_matrix_ground[i] = np.sum(masked_label) / cnt_pts
+                    else:
+                        label_matrix_non_ground[i] = -1
+                        label_matrix_ground[i] = -1
+
+            input_matrix = np.array(input_matrix).reshape(R, C, 3)
+            if label is not None:
+                label_matrix = np.array([label_matrix_non_ground, label_matrix_ground]).reshape(2, R, C)
+            input_matrix = np.einsum("ijk->kij", input_matrix)
+            return input_matrix, label_matrix
+
+        input_matrix, label_matrix = initialize_input_matrix()
+
+        # @logging_time
+        def interpolate_empty_bins():
+            # interpolate empty bins
+            for i in range(input_matrix.shape[0]):
+                c = input_matrix[i, :, :]
+                x = np.arange(0, c.shape[1])
+                y = np.arange(0, c.shape[0])
+                # mask invalid values
+                array = np.ma.masked_invalid(c)
+                xx, yy = np.meshgrid(x, y)
+                # get only the valid values
+                x1 = xx[~array.mask]
+                y1 = yy[~array.mask]
+                newarr = array[~array.mask]
+
+                interpolated_channel = interpolate.griddata((x1, y1), newarr.ravel(), (xx, yy), method="nearest")
+                input_matrix[i, :, :] = interpolated_channel
+            return input_matrix
+
+        input_matrix = interpolate_empty_bins()
 
         return input_matrix, label_matrix, grid_mask, bin_idx
 

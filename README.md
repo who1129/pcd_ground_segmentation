@@ -58,7 +58,7 @@ pred = np.where(np.logical_and(pred == 0, is_ground == 0), label, pred)
 # Getting Started
 ## Dataset
 - In This project, Aimmo dataset format is not supproted. Only Semantic KITTI dataset can import.
-- Download the [Seamantic KITTI dataset](http://www.semantic-kitti.org/dataset.html) and organize the downloaded files as official directory tree.
+- Download the [Semantic KITTI dataset](http://www.semantic-kitti.org/dataset.html) and organize the downloaded files as official directory tree.
 ```
 dataset
 └── sequences
@@ -81,7 +81,7 @@ path:
 <br>
 
 ## Model files
-To training model, pretrained model is not supported at this project.   
+For training model, pretrained model is not supported in this project.   
 You can [download](https://drive.google.com/file/d/1ArfgjplSinrlJRE8b29vmAYkqqU6PCDC/view?usp=share_link) trained model.
 
 <br>
@@ -91,7 +91,7 @@ train
 `python train.py --cfg config.yaml`
 
 
-evalutation     
+evaluation     
 `python eval.py --cfg config.yaml --ckpt experiments/14_srate15-interpolate/ckpts/10.pth`   
 
 <br>

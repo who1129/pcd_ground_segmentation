@@ -102,8 +102,7 @@ def train(cfg, trainset, validset, cfg_path, logger):
     valid_dataloader = DataLoader(validset, param.batch_size, drop_last=False, num_workers=8, collate_fn=batch_collate)
     logger.info("Training Start")
 
-    tbar = tqdm()
-    tbar = tqdm(range(param.total_epoch), ncols=100, desc="epoch")
+    tbar = tqdm(list(range(param.total_epoch)), total=param.total_epoch, ncols=100, desc="epoch")
     rate = None
     for epoch in tbar:
         sw.add_scalar(
@@ -111,7 +110,7 @@ def train(cfg, trainset, validset, cfg_path, logger):
             value=optim.param_groups[0]["lr"],
             global_step=epoch,
         )
-        it_tbar = tqdm(train_dataloader, total=len(train_dataloader), file=tqdm_out, ncols=100, desc="it")
+        it_tbar = tqdm(train_dataloader, total=len(train_dataloader), ncols=100, desc="it")
         it_rate = None
         for it, batch_data in enumerate(it_tbar):
             global_step = epoch * int(len(train_dataloader)) + it
